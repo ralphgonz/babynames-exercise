@@ -1,28 +1,65 @@
 #!/usr/bin/perl
 
+##############################################################################
 # reg-test.pl
 # R. Gonzalez 2015
+##############################################################################
 
 use Statistics::Regression;
+use Scalar::Util;
 
 my $sepChar = "\t"; # tab-delimited files
+my $targetName = "target";
 my %args = loadArgs();
 
-########################
-# Load training header and data
+
+# Load training header
 
 open my $trainHandle, '<', $args{trainFile}
 	|| die "Can't open $trainFile";
 	
-my @colNames = split /$sepChar/, <$trainHandle>;
-my %colPos = columnPositions(@colNames);
+my @colNames = getCols($trainHandle, $sepChar);
+my %colPos = getColumnPositions(@colNames);
+my $targetPos = $colPos{$targetName};
+my @featureNames = getFeatures($targetPos, @colNames);
 
-print $colPos{f_25};
+# Initialize the linear regression model
+my $reg = Statistics::Regression->new(
+	# Allow the model to compute a constant "intersept" as well
+   "Linear Regression", ["intercept", @featureNames]
+);
+
+# Load/process each training line. This is memory-efficient
+my %tokens;
+my $nextToken = 1;
+while (my @cols = getCols($trainHandle, $sepChar)) {
+	cleanData(\@cols, \%tokens, \$nextToken);
+	my $target = $cols[$targetPos];
+	my @features = getFeatures($targetPos, @cols);
+	$reg->include($target, [1.0, @features]);
+}
+
+$reg->print;
 
 exit(0);
 
 
-########################
+##############################################################################
+# Replace non-numerical values with consistent numerical token values
+sub cleanData {
+	my ($cols, $tokens, $nextToken) = @_;
+	for (my $i=0 ; $i<scalar(@$cols) ; ++$i) {
+		if (!Scalar::Util::looks_like_number($cols->[$i])) {
+			if (!$tokens->{$cols->[$i]}) {
+				$tokens->{$cols->[$i]} = $$nextToken++;
+			}
+			$cols->[$i] = $tokens->{$cols->[$i]};
+		}
+	}
+}
+	
+
+##############################################################################
 sub loadArgs {
 	my $usage = "ARGS:
 		-train <training data file>
@@ -45,8 +82,14 @@ sub loadArgs {
 	return %args;
 }
 
-########################
-sub columnPositions {
+##############################################################################
+sub getCols {
+	my ($trainHandle, $sepChar) = @_;
+	return split /$sepChar/, <$trainHandle>;
+}
+
+##############################################################################
+sub getColumnPositions {
 	my @colNames = @_;
 	my %colPos;
 	for (my $i=0 ; $i<scalar(@colNames) ; ++$i) {
@@ -55,9 +98,14 @@ sub columnPositions {
 	return %colPos;
 }
 
+##############################################################################
+# Strip "target" column
+sub getFeatures {
+	my ($targetPos, @cols) = @_;
+	my @features = @cols;
+	splice @features, $targetPos, 1;
+	return @features;
+}
 
 
 
-
-
-exit(0);
