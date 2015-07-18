@@ -30,35 +30,43 @@ my $reg = Statistics::Regression->new(
 );
 
 # Load/process each training line. This is memory-efficient
-my %tokens;
-my $nextToken = 1;
+my %categories;
 while (my @cols = getCols($trainHandle, $sepChar)) {
-	cleanData(\@cols, \%tokens, \$nextToken);
+	categorize(\@cols, \%categories);
 	my $target = $cols[$targetPos];
 	my @features = getFeatures($targetPos, @cols);
 	$reg->include($target, [1.0, @features]);
+}
+
+foreach my $cat (keys %categories) {
+	print STDERR $categories{$cat} . " --- $cat\n";
 }
 
 $reg->print;
 
 exit(0);
 
-
+	
 ##############################################################################
-# Replace non-numerical values with consistent numerical token values
-sub cleanData {
-	my ($cols, $tokens, $nextToken) = @_;
+# Categorize rows by combination of non-numerical columns
+# Also replace null with NaN
+sub categorize {
+	my ($cols, $categories) = @_;
+	my $category;
 	for (my $i=0 ; $i<scalar(@$cols) ; ++$i) {
 		if (!Scalar::Util::looks_like_number($cols->[$i])) {
-			if (!$tokens->{$cols->[$i]}) {
-				$tokens->{$cols->[$i]} = $$nextToken++;
-			}
-			$cols->[$i] = $tokens->{$cols->[$i]};
+			$category .= "$i:" . $cols->[$i] . "," if ($cols->[$i]);
+			$cols->[$i] = "NaN";
 		}
 	}
+	if (!$categories->{$category}) {
+		$categories->{$category} = 1;
+	} else {
+		++$categories->{$category};
+	}
+	return $category;
 }
 	
-
 ##############################################################################
 sub loadArgs {
 	my $usage = "ARGS:
