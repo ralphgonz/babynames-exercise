@@ -13,15 +13,18 @@ my $targetName = "target";
 my %args = loadArgs();
 
 
-# Load training header
+#####
+# First pass to load training header and decide which columns to skip
 
 open my $trainHandle, '<', $args{trainFile}
 	|| die "Can't open $trainFile";
-	
 my @colNames = getCols($trainHandle, $sepChar);
 my %colPos = getColumnPositions(@colNames);
 my $targetPos = $colPos{$targetName};
-my @featureNames = getFeatures($targetPos, @colNames);
+my %skipCols = getNonnumericCols($trainHandle, $sepChar);
+close $trainHandle;
+$skipCols{$targetPos} = 1;
+my @featureNames = getFeatures(\%skipCols, \@colNames);
 
 # Initialize the linear regression model
 my $reg = Statistics::Regression->new(
@@ -29,17 +32,17 @@ my $reg = Statistics::Regression->new(
    "Linear Regression", ["intercept", @featureNames]
 );
 
-# Load/process each training line. This is memory-efficient
-my %categories;
-while (my @cols = getCols($trainHandle, $sepChar)) {
-	categorize(\@cols, \%categories);
-	my $target = $cols[$targetPos];
-	my @features = getFeatures($targetPos, @cols);
-	$reg->include($target, [1.0, @features]);
-}
+#####
+# Second pass to load/process each training line. This is memory-efficient
 
-foreach my $cat (keys %categories) {
-	print STDERR $categories{$cat} . " --- $cat\n";
+open $trainHandle, '<', $args{trainFile}
+	|| die "Can't open $trainFile";
+getCols($trainHandle, $sepChar); # skip header line
+while (my @cols = getCols($trainHandle, $sepChar)) {
+	my $target = $cols[$targetPos];
+	my @features = getFeatures(\%skipCols, \@cols);
+	cleanCols(\@features);
+	$reg->include($target, [1.0, @features]);
 }
 
 $reg->print;
@@ -48,23 +51,29 @@ exit(0);
 
 	
 ##############################################################################
-# Categorize rows by combination of non-numerical columns
-# Also replace null with NaN
-sub categorize {
-	my ($cols, $categories) = @_;
-	my $category;
+# Get positions of columns containing nonnumeric data, sorry
+sub getNonnumericCols {
+	my ($trainHandle, $sepChar) = @_;
+	my %skipCols;
+	while (my @cols = getCols($trainHandle, $sepChar)) {
+		for (my $i=0 ; $i<scalar(@cols) ; ++$i) {
+			if ($cols[$i] && !Scalar::Util::looks_like_number($cols[$i])) {
+				$skipCols{$i} = 1;
+			}
+		}
+	}
+	return %skipCols;
+}
+	
+##############################################################################
+# Replace missing data with NaN
+sub cleanCols {
+	my ($cols) = @_;
 	for (my $i=0 ; $i<scalar(@$cols) ; ++$i) {
-		if (!Scalar::Util::looks_like_number($cols->[$i])) {
-			$category .= "$i:" . $cols->[$i] . "," if ($cols->[$i]);
+		if ($cols->[$i] !~ /\d/) {
 			$cols->[$i] = "NaN";
 		}
 	}
-	if (!$categories->{$category}) {
-		$categories->{$category} = 1;
-	} else {
-		++$categories->{$category};
-	}
-	return $category;
 }
 	
 ##############################################################################
@@ -109,9 +118,11 @@ sub getColumnPositions {
 ##############################################################################
 # Strip "target" column
 sub getFeatures {
-	my ($targetPos, @cols) = @_;
-	my @features = @cols;
-	splice @features, $targetPos, 1;
+	my ($skipCols, $cols) = @_;
+	my @features;
+	for (my $i=0 ; $i<scalar(@$cols) ; ++$i) {
+		push @features, $cols->[$i] if (!$skipCols->{$i});
+	}
 	return @features;
 }
 
