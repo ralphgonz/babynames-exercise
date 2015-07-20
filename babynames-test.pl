@@ -20,8 +20,10 @@ my %args = loadArgs();
 print STDERR "*** Load data...\n";
 my $data = loadAggregateData($args{dir}, $sepChar, \%colPos);
 
-my $mostPopular = getMostPopular($data);
+my $mostPopular = getMostPopular($data, undef);
 print "Most popular ovarall: " . (ucfirst($mostPopular)) . "\n";
+$mostPopular = getMostPopular($data, "f");
+print "Most popular female name: " . (ucfirst($mostPopular)) . "\n";
 
 my $mostGenderAmbiguous = getMostGenderAmbiguous($data, "2013");
 print "Most gender ambiguous 2013: " . (ucfirst($mostGenderAmbiguous)) . "\n";
@@ -97,12 +99,13 @@ sub getCols {
 
 ##############################################################################
 sub getMostPopular {
-	my ($data) = @_;
+	my ($data, $genderChoice) = @_;
 	
 	my %overallCountByName;
 	foreach my $name (keys %$data) {
 		foreach my $year (keys %{$data->{$name}}) {
 			foreach my $gender (keys %{$data->{$name}->{$year}}) {
+				next if ($genderChoice && lc($genderChoice) ne lc($gender));
 				if (!exists($overallCountByName{$name})) {
 					$overallCountByName{$name} = 0;
 				}
